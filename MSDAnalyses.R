@@ -53,8 +53,9 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     ALL <- readRDS( paste0(data_dir, "ALL.rds"))
 
     
-    ########################################### AUDIT DIAB PATIENTS #################################
-    
+    ##########################################################################################################
+    #                                           AUDIT DIAB PATIENTS                                          #
+    ##########################################################################################################
     
     # identify diab patients from MDV
     diab_MDV_tmp <- ALL %>% filter((AQ_DIABETE_Trait == 1) | (AQ_DIABETE_Inject == 1) | ((AQ_DIABETE_Consulte == 1) & (AQ_DIABETE_DitMed == 1)))
@@ -96,7 +97,11 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     all_diab$algo[all_diab$ID %in% diab_MDV_type2$ID] <- "MDV"
     
     
-    ############################################### DESCRIPTIVE STATS DIAB PATIENTS #################################
+    
+    ##########################################################################################################
+    #                                     DESCRIPTIVE STATS DIAB PATIENTS                                    #
+    ##########################################################################################################
+    
     
     ALL <- merge(ALL, all_diab, by = "ID", all.x = T)
     
@@ -161,8 +166,9 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     # length(unique(med_antidiab_sniiramselect$ID))
     
     
-
-    ############################# Compare individuals according to source of detection ############################
+    ##########################################################################################################
+    #                           Compare individuals according to source of detection                         #
+    ##########################################################################################################
 
         # build tables
         col_seq <- colnames(ALL)[grep("^20", colnames(ALL))]
@@ -179,8 +185,10 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
         seqlegend(seq.seq)
         
         
-        
-    ##### Select Constances-detected type II diabetic patients with 2 empty trimesters -- Fisrt Line treatment #####
+    ################################################################################################################
+    #               Select Constances-detected type II diabetic patients with 2 empty trimesters                   #
+    #                                       Fisrt Line treatment                                                   #
+    ################################################################################################################
 
         # build main table
         ALL_diab2 <- ALL %>% filter(!is.na(type), type == "type2", !is.na(`2009 Q1`))
