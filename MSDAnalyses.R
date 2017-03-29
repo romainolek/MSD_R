@@ -3,22 +3,28 @@ library("dplyr")
 library("lubridate")
 library("TraMineR")
 
-data_all <- readRDS("antidiab_seq.rds")
+script_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_R/"
+data_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_data/"
 
-POP <- read.csv("Extraction1/0_DATA_POP.txt", sep = ";")
-MDV <- read.csv("Extraction1/1_DATA_MDV.txt", sep = ";")
-MED <- read.csv("Extraction1/1_DATA_MED.txt", sep = ";")
-PARACL <- read.csv("Extraction1/2_DATA_PARACLIN.txt", sep = ";")
+# data building
+
+data_all <- readRDS(paste0(data_dir, "server/antidiab_seq.rds"))
+POP <- read.csv(paste0(data_dir, "Extraction1/0_DATA_POP.txt"), sep = ";")
+MDV <- read.csv(paste0(data_dir, "Extraction1/1_DATA_MDV.txt"), sep = ";")
+MED <- read.csv(paste0(data_dir, "Extraction1/1_DATA_MED.txt"), sep = ";")
+PARACL <- read.csv(paste0(data_dir, "Extraction1/2_DATA_PARACLIN.txt"), sep = ";")
+
 ALL <- merge(POP, MDV, by = "PROJ_ISP", all.x = T)
 ALL <- merge(ALL, MED, by = "PROJ_ISP", all.x = T)
 ALL <- merge(ALL, PARACL, by = "PROJ_ISP", all.x = T)
 
 colnames(ALL)[colnames(ALL) == "PROJ_ISP"] <- "ID"
 data_all <- merge(ALL, data_all, by.x = "ID", by.y = "ID", all.x = T)
+
 data_all$ID <- NULL
 data_all$ID <- 1:nrow(data_all)
-colnames(data_all)
-saveRDS(data_all, "data_all.rds")
+
+saveRDS(data_all, paste0(data_dir, "data_all.rds"))
 
 
 
