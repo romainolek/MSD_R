@@ -2,62 +2,76 @@ library("reshape2")
 library("dplyr")
 library("lubridate")
 library("TraMineR")
+library("chron")
+library("survival")
 
-script_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_R/"
+
+R_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_R/"
 data_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_data/"
 
-# data building
 
+# load data from sniiram + complementary data
 data_all <- readRDS(paste0(data_dir, "server/antidiab_seq.rds"))
+indiv_dispo <- readRDS(paste0(data_dir, "server/indiv_dispo.rds"))
+temps_jeune <- readRDS(paste0(data_dir, "temps_jeune.rds"))
+
+# load data from extraction
 POP <- read.csv(paste0(data_dir, "Extraction1/0_DATA_POP.txt"), sep = ";")
 MDV <- read.csv(paste0(data_dir, "Extraction1/1_DATA_MDV.txt"), sep = ";")
 MED <- read.csv(paste0(data_dir, "Extraction1/1_DATA_MED.txt"), sep = ";")
 PARACL <- read.csv(paste0(data_dir, "Extraction1/2_DATA_PARACLIN.txt"), sep = ";")
-
 ALL <- merge(POP, MDV, by = "PROJ_ISP", all.x = T)
 ALL <- merge(ALL, MED, by = "PROJ_ISP", all.x = T)
 ALL <- merge(ALL, PARACL, by = "PROJ_ISP", all.x = T)
 
+# merge data from extraction and sniiram
 colnames(ALL)[colnames(ALL) == "PROJ_ISP"] <- "ID"
-data_all <- merge(ALL, data_all, by.x = "ID", by.y = "ID", all.x = T)
+ALL <- merge(ALL, data_all, by.x = "ID", by.y = "ID", all.x = T)
 
-data_all$ID <- NULL
-data_all$ID <- 1:nrow(data_all)
+# add data about sniiram disponibility
+colnames(indiv_dispo)[colnames(indiv_dispo) == "PROJ_ISP"] <- "ID"
+indiv_dispo$sniiram_dispo <- rep(1, nrow(indiv_dispo))
+ALL <- merge(ALL, indiv_dispo, by.x = "ID", by.y = "ID", all.x = T)
 
-saveRDS(data_all, paste0(data_dir, "data_all.rds"))
+# add data about fasting period
+colnames(temps_jeune)[colnames(temps_jeune) == "PROJ_ISP"] <- "ID"
+ALL <- merge(ALL, temps_jeune, by.x = "ID", by.y = "ID", all.x = T)
+colnames(ALL)
+ALL$heures_jeune <- times(ALL$duree_jeune)
+ALL$heures_jeune <- hours(ALL$heures_jeune)
 
+# delete IDs
+ALL$ID <- NULL
+ALL$ID <- 1:nrow(ALL)
+
+saveRDS(ALL, paste0(data_dir, "ALL.rds"))
 
 
     ###############################################################################################
     
     
-    data_all <- readRDS("data_all.rds")
+    ALL <- readRDS( paste0(data_dir, "ALL.rds"))
 
     
     ########################################### AUDIT DIAB PATIENTS #################################
     
     
     # identify diab patients from MDV
-    diab_MDV_tmp <- data_all %>% filter((AQ_DIABETE_Trait == 1) | (AQ_DIABETE_Inject == 1) | ((AQ_DIABETE_Consulte == 1) & (AQ_DIABETE_DitMed == 1)))
-    
+    diab_MDV_tmp <- ALL %>% filter((AQ_DIABETE_Trait == 1) | (AQ_DIABETE_Inject == 1) | ((AQ_DIABETE_Consulte == 1) & (AQ_DIABETE_DitMed == 1)))
     diab_MDV_type1 <- diab_MDV_tmp %>% filter((AQ_DIABETE_Age  < 45) & (AQ_DIABETE_Inject  == 1) & (AQ_DIABETE_InjectAge  - AQ_DIABETE_Age  < 2)) %>% select(ID)
-    colnames(diab_MDV_type1) <- "ID"
     diab_MDV_type2 <-  diab_MDV_tmp %>% filter(!(ID %in% diab_MDV_type1$ID)) %>% select(ID)
-    colnames(diab_MDV_type2) <- "ID"
-    
-    
+
+
     # identify patients from MED
-    diab_MED_type1 <- data_all %>% filter(AQ_MED_EndDiabet1 == 1) %>% select(ID)
-    colnames(diab_MED_type1) <- "ID"
-    diab_MED_type2 <- data_all %>% filter(AQ_MED_EndDiabet2 == 1) %>% select(ID)
-    colnames(diab_MED_type2) <- "ID"
+    diab_MED_type1 <- ALL %>% filter(AQ_MED_EndDiabet1 == 1) %>% select(ID)
+    diab_MED_type2 <- ALL %>% filter(AQ_MED_EndDiabet2 == 1) %>% select(ID)
+
     
-    
-    # identify volonteers with a high glycemia 
-    diab_glyc_type1 <- data_all %>% filter(PARACL_BIO_Glyc > 7, FM_IncluAge <= 35) %>% select(ID)
-    diab_glyc_type2 <- data_all %>% filter(PARACL_BIO_Glyc > 7, FM_IncluAge > 35) %>% select(ID)
-    colnames(diab_glyc_type1) <- "ID"
-    colnames(diab_glyc_type2) <- "ID"
+    # identify volonteers with a high glycemia
+    ALL$PARACL_BIO_Glyc_n <- ifelse(ALL$heures_jeune < 10, NA, ALL$PARACL_BIO_Glyc)
+    diab_glyc_type1 <- ALL %>% filter(PARACL_BIO_Glyc_n > 7, FM_IncluAge <= 35) %>% select(ID)
+    diab_glyc_type2 <- ALL %>% filter(PARACL_BIO_Glyc_n > 7, FM_IncluAge > 35) %>% select(ID)
+
     
     
     # regroup all potential patients in a table
@@ -82,43 +96,55 @@ saveRDS(data_all, paste0(data_dir, "data_all.rds"))
     all_diab$algo[all_diab$ID %in% diab_MDV_type2$ID] <- "MDV"
     
     
-    
-    
     ############################################### DESCRIPTIVE STATS DIAB PATIENTS #################################
     
-    data_all <- merge(data_all, all_diab, by = "ID", all.x = T)
-    colnames(data_all)
+    ALL <- merge(ALL, all_diab, by = "ID", all.x = T)
+    
     
     # table 1 : size of diabetic population
     
-    dcast(data_all, data_all$algo ~ data_all$type, length)
+    all_diab <- ALL %>% filter(!is.na(type))
+    dcast(all_diab, all_diab$algo ~ all_diab$type, length)
     
-    all_diab_H <- data_all %>% filter(!is.na(type), FM_Sexe==1)
-    length(all_diab_H$ID)
+    all_diab_H <- all_diab %>% filter(FM_Sexe==1)
+    dcast(all_diab_H, all_diab_H$algo ~ all_diab_H$type, length)
     
-    all_diab_F <- data_all %>% filter(!is.na(type), FM_Sexe==2)
-    length(all_diab_F$ID)
+    all_diab_F <- all_diab %>% filter(FM_Sexe==2)
+    dcast(all_diab_F, all_diab_F$algo ~ all_diab_F$type, length)
     
-    # table 2 : size of diabetic population available in the sniiram ## A REVOIR 
+    # table 2 : size of diabetic population available in the sniiram
     
-    data_all$sniiram <- ifelse(!is.na(data_all$`2009 Q1`), 1, 0)
-    dcast(data_all, data_all$sniiram ~ data_all$algo, length)
-    # 
-    # all_diab_sniiram_H <- all_diab_sniiram %>% filter(Sexe==1)
-    # 
-    # length(all_diab_sniiram$ID)
-    # dcast(all_diab_sniiram, all_diab_sniiram$algo ~ all_diab_sniiram$type, length)
-    # 
-    # all_diab_sniiram_H <- all_diab_sniiram %>% filter(Sexe==1)
-    # length(all_diab_sniiram_H$ID)
-    # dcast(all_diab_sniiram_H, all_diab_sniiram_H$algo ~ all_diab_sniiram_H$type, length)
-    # 
-    # all_diab_sniiram_F <- all_diab_sniiram %>% filter(Sexe==2)
-    # length(all_diab_sniiram_F$ID)
-    # dcast(all_diab_sniiram_F, all_diab_sniiram_F$algo ~ all_diab_sniiram_F$type, length)
+    all_diab_sniiram_dispo <- all_diab %>% filter(sniiram_dispo == 1)
+    dcast(all_diab_sniiram_dispo, all_diab_sniiram_dispo$algo ~ all_diab_sniiram_dispo$type, length)
+    
+    all_diab_sniiram_dispo_H <- all_diab_sniiram_dispo %>% filter(FM_Sexe==1)
+    dcast(all_diab_sniiram_dispo_H, all_diab_sniiram_dispo_H$algo ~ all_diab_sniiram_dispo_H$type, length)
+    
+    all_diab_sniiram_dispo_F <- all_diab_sniiram_dispo %>% filter(FM_Sexe==2)
+    dcast(all_diab_sniiram_dispo_F, all_diab_sniiram_dispo_F$algo ~ all_diab_sniiram_dispo_F$type, length)
+    
+    # table 3 : type 2 patients having at least one antidiabetic drug delivery between 2009 and 2014
+    
+    all_diab_sniiram_dispo_type2 <- all_diab_sniiram_dispo %>% filter(type == "type2")
+    all_diab_sniiram_dispo_type2$min1AD <- ifelse(!is.na(all_diab_sniiram_dispo_type2$`2009 Q1`), 1, 0)
+    table(all_diab_sniiram_dispo_type2$min1AD)
+    dcast(all_diab_sniiram_dispo_type2, algo ~ min1AD)
+    
+    # table 4 : same table but with redondant populations --> proxi of algorithms specificity
+    all_diab_sniiram_dispo_type2_MDV <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_MDV_type2$ID)
+    table(all_diab_sniiram_dispo_type2_MDV$min1AD, useNA = "always")
+    all_diab_sniiram_dispo_type2_MED <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_MED_type2$ID)
+    table(all_diab_sniiram_dispo_type2_MED$min1AD, useNA = "always")
+    all_diab_sniiram_dispo_type2_glyc <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_glyc_type2$ID)
+    table(all_diab_sniiram_dispo_type2_glyc$min1AD, useNA = "always")
+    
+    
+    # table 5 : closer look to people consuming AD in the sniiram
+    ALL_min1AD <- ALL %>% filter(!is.na(`2009 Q1`))
+    table(ALL_min1AD$type, useNA = "always")
     
     # select only type 2 diabetic people
-    # data_all_type2 <- all_diab_sniiram %>% filter(type == "type2")
+    # ALL_type2 <- all_diab_sniiram %>% filter(type == "type2")
     # 
     # # table 3 : describe percentage of patients consuming at least one antidiabetic between 2009 and 2014
     # all_diab_sniiram_type2$sniiram <- "NO"
@@ -139,14 +165,14 @@ saveRDS(data_all, paste0(data_dir, "data_all.rds"))
     ############################# Compare individuals according to source of detection ############################
 
         # build tables
-        col_seq <- colnames(data_all)[grep("^20", colnames(data_all))]
-        seq_antidiab <- data_all[, c("ID", col_seq, "algo")]
-        data_all_MDV <- seq_antidiab %>% filter(algo == "MDV", !is.na(`2010 Q1`)) %>% select(-algo)
-        data_all_MED <- seq_antidiab %>% filter(algo == "MED", !is.na(`2010 Q1`)) %>% select(-algo)
-        data_all_GLYC <- seq_antidiab %>% filter(algo == "GLYC", !is.na(`2010 Q1`)) %>% select(-algo)
-        data_all_noalgo <- seq_antidiab %>% filter(is.na(algo), !is.na(`2010 Q1`)) %>% select(-algo)
+        col_seq <- colnames(ALL)[grep("^20", colnames(ALL))]
+        seq_antidiab <- ALL[, c("ID", col_seq, "algo")]
+        ALL_MDV <- seq_antidiab %>% filter(algo == "MDV", !is.na(`2010 Q1`)) %>% select(-algo)
+        ALL_MED <- seq_antidiab %>% filter(algo == "MED", !is.na(`2010 Q1`)) %>% select(-algo)
+        ALL_GLYC <- seq_antidiab %>% filter(algo == "GLYC", !is.na(`2010 Q1`)) %>% select(-algo)
+        ALL_noalgo <- seq_antidiab %>% filter(is.na(algo), !is.na(`2010 Q1`)) %>% select(-algo)
         # plot 
-        list.seq <- build_seq(data_all_noalgo)
+        list.seq <- build_seq(ALL_noalgo, seq.legend)
         seq.seq <- list.seq$seq
         seq.legend <- list.seq$legend
         seqIplot(seq.seq, sortv = "from.start", withlegend = F)
@@ -157,10 +183,10 @@ saveRDS(data_all, paste0(data_dir, "data_all.rds"))
     ##### Select Constances-detected type II diabetic patients with 2 empty trimesters -- Fisrt Line treatment #####
 
         # build main table
-        data_all_diab2 <- data_all %>% filter(!is.na(type), type == "type2", !is.na(`2009 Q1`))
-        data_all_diab2_2triempty <- data_all_diab2 %>% filter(`2009 Q1` == "empty", `2009 Q2` == "empty")
+        ALL_diab2 <- ALL %>% filter(!is.na(type), type == "type2", !is.na(`2009 Q1`))
+        ALL_diab2_2triempty <- ALL_diab2 %>% filter(`2009 Q1` == "empty", `2009 Q2` == "empty")
         # build sequences
-        seq_data_all_diab2_2triempty <- data_all_diab2_2triempty[, c("ID", col_seq)]
+        seq_ALL_diab2_2triempty <- ALL_diab2_2triempty[, c("ID", col_seq)]
         # fill isolated empty trimesters
         fill_isolated_tri <- function(datatable) {
             assign("df", datatable)
@@ -169,12 +195,12 @@ saveRDS(data_all, paste0(data_dir, "data_all.rds"))
             }
             return(df)
         }
-        seq_data_all_diab2_2triempty <- fill_isolated_tri(seq_data_all_diab2_2triempty)
+        seq_ALL_diab2_2triempty <- fill_isolated_tri(seq_ALL_diab2_2triempty)
         # reinitialize sequences
-        seq_reinit <- reinitialize(seq_data_all_diab2_2triempty, "empty")
+        seq_reinit <- reinitialize(seq_ALL_diab2_2triempty, "empty")
         # put result in main table
-        data_all_diab2_2triempty$firstline <- seq_reinit$`2009 Q1`
-        data_all_diab2_2triempty$firstline_t <- seq_reinit$vect_count
+        ALL_diab2_2triempty$firstline <- seq_reinit$`2009 Q1`
+        ALL_diab2_2triempty$firstline_t <- seq_reinit$vect_count
         seq_reinit$vect_count <- NULL
         # plot
         list.seq <- build_seq(seq_reinit)
@@ -183,23 +209,23 @@ saveRDS(data_all, paste0(data_dir, "data_all.rds"))
         seqIplot(seq.seq, sortv = "from.start", withlegend = F)
         seqlegend(seq.seq)
         # stats first line
-        table(data_all_diab2_2triempty$firstline)
+        treat_count <- as.data.frame(table(ALL_diab2_2triempty$firstline)) %>% arrange(-Freq)
         # survival period + censoring for sequences starting with metformin
         seq_reinit_Met <- seq_reinit %>% filter(`2009 Q1` == "metformine")
         seq_reinit_Met_reinit <- reinitialize(seq_reinit_Met, "metformine")
         seq_reinit_Met_reinit_info <- seq_reinit_Met_reinit %>% select(ID, `2009 Q1`, vect_count) %>% rename("ID" = ID, secondline = `2009 Q1`, secondline_t = vect_count)
         seq_reinit_Met_reinit_info$secondline[is.na(seq_reinit_Met_reinit_info$secondline)] <- "censor"
-        data_all_diab2_2triempty <- merge(data_all_diab2_2triempty, seq_reinit_Met_reinit_info, by = "ID", all.x = T)
-        table(data_all_diab2_2triempty$secondline, useNA = "always")
+        ALL_diab2_2triempty <- merge(ALL_diab2_2triempty, seq_reinit_Met_reinit_info, by = "ID", all.x = T)
+        table(ALL_diab2_2triempty$secondline, useNA = "always")
         
 
     # survival analysis
-        data_all_diab2_2triempty$newtreat <- ifelse(data_all_diab2_2triempty$secondline != "censor", 1, 0)
-        plot(survfit(Surv(data_all_diab2_2triempty$secondline_t, data_all_diab2_2triempty$newtreat)~1), main = "Maintien du traitement Metformine seule")
-        data_all_diab2_2triempty$secondline[ data_all_diab2_2triempty$secondline =="censor"] <- NA
-        data_all_diab2_2triempty$secondline <- factor(data_all_diab2_2triempty$secondline)
-        modals <- levels(data_all_diab2_2triempty$secondline)
-        surv_model <- survfit(Surv(data_all_diab2_2triempty$secondline_t, data_all_diab2_2triempty$newtreat)~data_all_diab2_2triempty$secondline)
+        ALL_diab2_2triempty$newtreat <- ifelse(ALL_diab2_2triempty$secondline != "censor", 1, 0)
+        plot(survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~1), main = "Maintien du traitement Metformine seule")
+        ALL_diab2_2triempty$secondline[ ALL_diab2_2triempty$secondline =="censor"] <- NA
+        ALL_diab2_2triempty$secondline <- factor(ALL_diab2_2triempty$secondline)
+        modals <- levels(ALL_diab2_2triempty$secondline)
+        surv_model <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~ALL_diab2_2triempty$secondline)
         plot(surv_model, lty = 1, col = rainbow(length(modals)), main = "Maintien du traitement Metformine seule")
         legend("top", 
             legend=modals,
