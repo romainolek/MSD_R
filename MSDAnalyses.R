@@ -224,16 +224,16 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
         seq_reinit_Met_reinit_info <- seq_reinit_Met_reinit %>% select(ID, `2009 Q1`, vect_count) %>% rename("ID" = ID, secondline = `2009 Q1`, secondline_t = vect_count)
         seq_reinit_Met_reinit_info$secondline[is.na(seq_reinit_Met_reinit_info$secondline)] <- "censor"
         ALL_diab2_2triempty <- merge(ALL_diab2_2triempty, seq_reinit_Met_reinit_info, by = "ID", all.x = T)
-        table(ALL_diab2_2triempty$secondline, useNA = "always")
-        
+        treat2_count <- as.data.frame(table(ALL_diab2_2triempty$secondline)) %>% arrange(-Freq)
 
     # survival analysis
         ALL_diab2_2triempty$newtreat <- ifelse(ALL_diab2_2triempty$secondline != "censor", 1, 0)
-        plot(survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~1), main = "Maintien du traitement Metformine seule")
+        surv_model1 <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~1)
+        plot(surv_model1, main = "Maintien du traitement Metformine seule")
         ALL_diab2_2triempty$secondline[ ALL_diab2_2triempty$secondline =="censor"] <- NA
         ALL_diab2_2triempty$secondline <- factor(ALL_diab2_2triempty$secondline)
         modals <- levels(ALL_diab2_2triempty$secondline)
-        surv_model <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~ALL_diab2_2triempty$secondline)
+        surv_model2 <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~ALL_diab2_2triempty$secondline)
         plot(surv_model, lty = 1, col = rainbow(length(modals)), main = "Maintien du traitement Metformine seule")
         legend("top", 
             legend=modals,
@@ -241,6 +241,7 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
             lty=1,
             horiz=FALSE,
             bty='n')
+        
         
         
         
