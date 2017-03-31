@@ -9,6 +9,7 @@ library("survival")
 R_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_R/"
 data_dir <- "C:/Users/r_olekhnovitch/Desktop/CNAM-MSD/MSD/MSD_data/"
 
+source(paste0(R_dir, "Fn_Tableaux.R"))
 
 # load data from sniiram + complementary data
 data_all <- readRDS(paste0(data_dir, "server/antidiab_seq.rds"))
@@ -36,7 +37,6 @@ ALL <- merge(ALL, indiv_dispo, by.x = "ID", by.y = "ID", all.x = T)
 # add data about fasting period
 colnames(temps_jeune)[colnames(temps_jeune) == "PROJ_ISP"] <- "ID"
 ALL <- merge(ALL, temps_jeune, by.x = "ID", by.y = "ID", all.x = T)
-colnames(ALL)
 ALL$heures_jeune <- times(ALL$duree_jeune)
 ALL$heures_jeune <- hours(ALL$heures_jeune)
 
@@ -51,10 +51,67 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     
     
     ALL <- readRDS( paste0(data_dir, "ALL.rds"))
+    
+    
+    ##########################################################################################################
+    #                                           CLEAN DATA                                                   #
+    ##########################################################################################################
+    
+    # AGE
+    ALL$cut_age <- cut(floor(ALL$FM_IncluAge), breaks = c(18,40,50,60,100), right = FALSE)
+    levels(ALL$cut_age) <- c('18-39 ans','40-49 ans', '50-59 ans', '60 ans et plus')
+    
+    # SEXE
+    ALL$FM_Sexe <- as.factor(ALL$FM_Sexe)
+    levels(ALL$FM_Sexe) <- c("Homme","Femme")
+    
+    # EDUCATION
+    ALL$educ <- NA
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n == 1] <- 0
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n %in% c(2,3)] <- 1
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n == 4] <- 2
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n == 5] <- 3
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n == 6] <- 4
+    ALL$educ[ALL$AQ_FOYVIE_Diplome_n == 7] <- 5
+    ALL$educ <- as.factor(ALL$educ)
+    levels(ALL$educ) <- c("Sans diplome","CFG, CEP, BEPC, CAP, BEP","Bac","Bac +2/+3","Bac +4","Bac +5 ou plus")
+    
+    # ETAT DE SANTE GENERALE PERCUE (de 1 - tres bon à 8 - tres mauvais):
+    ALL$AQ_SANTE_EtatGeneral_n <- as.factor(ALL$AQ_SANTE_EtatGeneral_n)
+    
+    # SITUATION FAMILIALE (en couple : Oui/Non):
+    ALL$AQ_FOYVIE_AvecCouple_n <- as.factor(ALL$AQ_FOYVIE_AvecCouple_n)
+    levels(ALL$AQ_FOYVIE_AvecCouple_n) <- c("Oui","Non")
+    
+    # TABAGISME (fumeur/non-fumeur/ex-fumeur):
+    ALL$AQ_COMPORT_TcStatut_i <- as.factor(ALL$AQ_COMPORT_TcStatut_i)
+    levels(ALL$AQ_COMPORT_TcStatut_i) <- c("Non fumeur","Fumeur","Ex-fumeur")
+    
+    # CONSOMMATION D'ALCOOL (abstinence / occasionnelle / moderee / excessive)
+    ALL$AQ_COMPORT_AlcRecommandation_i <- ifelse(ALL$AQ_COMPORT_AlcRecommandation_i==""|ALL$AQ_COMPORT_AlcRecommandation_i=="VALEUR MANQUANTE", NA, ALL$AQ_COMPORT_AlcRecommandation_i)
+    ALL$AQ_COMPORT_AlcRecommandation_i <- as.factor(ALL$AQ_COMPORT_AlcRecommandation_i)
+    levels(ALL$AQ_COMPORT_AlcRecommandation_i) <- c("ABSTINENCE","CONSOMMATION MODEREE","CONSOMMATION NON-RECOMMANDEE")
+    
+    # ACTIVITE PHYSIQUE (de 0 - inactif à 6 - tres actif)
+    ALL$AQ_ACTPHY_ActPhyHorsTrv_i <- as.factor(ALL$AQ_ACTPHY_ActPhyHorsTrv_i)
+    
+    # Symptomatologie dépressive (CES-D >16 : Oui/Non)
+    ALL$AQ_CESD_Classe_i <- as.factor(ALL$AQ_CESD_Classe_i)
+    levels(ALL$AQ_CESD_Classe_i) <- c("Pas de depression","Depression")             
+    
+    
+    # BMI (sous poids / normal / surpoids / obese)
+    ALL$cut_imc <- cut(ALL$PARACL_IND_BMI, breaks = c(0,18.5,25,30,max(ALL$PARACL_IND_BMI, na.rm = T)))
+    levels(ALL$cut_imc) <- c("Sous-poids","Normal","Surpoids","Obesite")
+    
+    # Dépression (questionnaire med)
+    ALL$AQ_MED_NerDepres[ALL$AQ_MED_NerDepres==999] <- NA
+    ALL$AQ_MED_NerDepres <- as.factor(ALL$AQ_MED_NerDepres)
+    levels(ALL$AQ_MED_NerDepres) <- c("Oui","Non")
 
     
     ##########################################################################################################
-    #                                           AUDIT DIAB PATIENTS                                          #
+    #                                           CLASSIFY DIAB PATIENTS                                       #
     ##########################################################################################################
     
     # identify diab patients from MDV
@@ -80,12 +137,12 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     all_diab <- unique(do.call("rbind", list(diab_MDV_type1, diab_MDV_type2, diab_MED_type1, diab_MED_type2, diab_glyc_type1, diab_glyc_type2)))
     
     all_diab$type <- "unknown"
-    all_diab$type[all_diab$ID %in% diab_glyc_type1$ID] <- "type1"
-    all_diab$type[all_diab$ID %in% diab_glyc_type2$ID] <- "type2"
-    all_diab$type[all_diab$ID %in% diab_MED_type1$ID] <- "type1"
-    all_diab$type[all_diab$ID %in% diab_MED_type2$ID] <- "type2"
-    all_diab$type[all_diab$ID %in% diab_MDV_type1$ID] <- "type1"
-    all_diab$type[all_diab$ID %in% diab_MDV_type2$ID] <- "type2"
+    all_diab$type[all_diab$ID %in% diab_glyc_type1$ID] <- "Type 1"
+    all_diab$type[all_diab$ID %in% diab_glyc_type2$ID] <- "Type 2"
+    all_diab$type[all_diab$ID %in% diab_MED_type1$ID] <- "Type 1"
+    all_diab$type[all_diab$ID %in% diab_MED_type2$ID] <- "Type 2"
+    all_diab$type[all_diab$ID %in% diab_MDV_type1$ID] <- "Type 1"
+    all_diab$type[all_diab$ID %in% diab_MDV_type2$ID] <- "Type 2"
     
     
     all_diab$algo <- "unknown"
@@ -103,69 +160,70 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
     ##########################################################################################################
     
     
-    ALL <- merge(ALL, all_diab, by = "ID", all.x = T)
+    ALL_bis <- merge(ALL, all_diab, by = "ID", all.x = T)
+    ALL_bis$algo <- factor(ALL_bis$algo, levels = c("MDV", "MED", "GLYC"))
+    
+    # Part 1: size of diabetic population
+    
+    all_diab_bis <- ALL_bis %>% filter(!is.na(type))
+    table1 <- CI_table(all_diab_bis, "type", "algo", methode = "theory")
+    
+    all_diab_H <- all_diab_bis %>% filter(FM_Sexe=="Homme")
+    table2 <- CI_table(all_diab_H, "type", "algo", methode = "theory")
+    
+    all_diab_F <- all_diab_bis %>% filter(FM_Sexe=="Femme")
+    table3 <- CI_table(all_diab_F, "type", "algo", methode = "theory")
+
+    
+    # Part 2: type 2 patients
+    
+    all_diab_type2 <- ALL_bis %>% filter(type == "Type 2")
+    table4 <- CI_table(all_diab_type2, "FM_Sexe", "algo", methode = "bootstrap")
+    colnames(all_diab_type2)
+    table5 <- CI_table(all_diab_type2, "cut_age", "algo", methode = "bootstrap")
+    table6 <- CI_table(all_diab_type2, "educ", "algo", methode = "bootstrap")
+    table7 <- CI_table(all_diab_type2, "cut_imc", "algo", methode = "bootstrap")
+    table8 <- CI_table(all_diab_type2, "AQ_FOYVIE_AvecCouple_n", "algo", methode = "bootstrap")
+    table9 <- CI_table(all_diab_type2, "AQ_COMPORT_TcStatut_i", "algo", methode = "bootstrap")
+    table10 <- CI_table(all_diab_type2, "AQ_COMPORT_AlcRecommandation_i", "algo", methode = "bootstrap")
+    table11 <- CI_table(all_diab_type2, "AQ_ACTPHY_ActPhyHorsTrv_i", "algo", methode = "bootstrap")
+    table12 <- CI_table(all_diab_type2, "AQ_CESD_Classe_i", "algo", methode = "bootstrap")
+    table13 <- CI_table(all_diab_type2, "AQ_MED_NerDepres", "algo", methode = "bootstrap")
+    table14 <- CI_table(all_diab_type2, "AQ_SANTE_EtatGeneral_n", "algo", methode = "bootstrap")
     
     
-    # table 1 : size of diabetic population
+    # Part 3: dtype 2 patients available in the Sniiram
     
-    all_diab <- ALL %>% filter(!is.na(type))
-    dcast(all_diab, all_diab$algo ~ all_diab$type, length)
-    
-    all_diab_H <- all_diab %>% filter(FM_Sexe==1)
-    dcast(all_diab_H, all_diab_H$algo ~ all_diab_H$type, length)
-    
-    all_diab_F <- all_diab %>% filter(FM_Sexe==2)
-    dcast(all_diab_F, all_diab_F$algo ~ all_diab_F$type, length)
-    
-    # table 2 : size of diabetic population available in the sniiram
-    
-    all_diab_sniiram_dispo <- all_diab %>% filter(sniiram_dispo == 1)
-    dcast(all_diab_sniiram_dispo, all_diab_sniiram_dispo$algo ~ all_diab_sniiram_dispo$type, length)
-    
-    all_diab_sniiram_dispo_H <- all_diab_sniiram_dispo %>% filter(FM_Sexe==1)
-    dcast(all_diab_sniiram_dispo_H, all_diab_sniiram_dispo_H$algo ~ all_diab_sniiram_dispo_H$type, length)
-    
-    all_diab_sniiram_dispo_F <- all_diab_sniiram_dispo %>% filter(FM_Sexe==2)
-    dcast(all_diab_sniiram_dispo_F, all_diab_sniiram_dispo_F$algo ~ all_diab_sniiram_dispo_F$type, length)
-    
-    # table 3 : type 2 patients having at least one antidiabetic drug delivery between 2009 and 2014
-    
-    all_diab_sniiram_dispo_type2 <- all_diab_sniiram_dispo %>% filter(type == "type2")
-    all_diab_sniiram_dispo_type2$min1AD <- ifelse(!is.na(all_diab_sniiram_dispo_type2$`2009 Q1`), 1, 0)
-    table(all_diab_sniiram_dispo_type2$min1AD)
-    dcast(all_diab_sniiram_dispo_type2, algo ~ min1AD)
-    
-    # table 4 : same table but with redondant populations --> proxi of algorithms specificity
-    all_diab_sniiram_dispo_type2_MDV <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_MDV_type2$ID)
-    table(all_diab_sniiram_dispo_type2_MDV$min1AD, useNA = "always")
-    all_diab_sniiram_dispo_type2_MED <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_MED_type2$ID)
-    table(all_diab_sniiram_dispo_type2_MED$min1AD, useNA = "always")
-    all_diab_sniiram_dispo_type2_glyc <- all_diab_sniiram_dispo_type2 %>% filter(ID %in% diab_glyc_type2$ID)
-    table(all_diab_sniiram_dispo_type2_glyc$min1AD, useNA = "always")
+    all_diab_type2_sniiram_dispo <- all_diab_type2 %>% filter(sniiram_dispo == 1)
+    table5 <- CI_table(all_diab_type2_sniiram_dispo, "FM_Sexe", "algo", methode = "theory")
     
     
-    # table 5 : closer look to people consuming AD in the sniiram
-    ALL_min1AD <- ALL %>% filter(!is.na(`2009 Q1`))
+    # Part 4: type 2 patients having at least one antidiabetic drug delivery between 2009 and 2014
+    
+    all_diab_type2_sniiram_dispo$min1AD <- ifelse(!is.na(all_diab_type2_sniiram_dispo$`2009 Q1`), 1, 0)
+    table7 <- CI_table(all_diab_type2_sniiram_dispo, "algo", "min1AD", methode = "theory")
+    
+    
+    # Part 5: same table but with redondant populations --> proxi of algorithms specificity
+    
+    all_diab_type2_sniiram_dispo_MDV <- all_diab_type2_sniiram_dispo %>% filter(ID %in% diab_MDV_type2$ID)
+    all_diab_type2_sniiram_dispo_MDV$algo <- "MDV"
+    all_diab_type2_sniiram_dispo_MED <- all_diab_type2_sniiram_dispo %>% filter(ID %in% diab_MED_type2$ID)
+    all_diab_type2_sniiram_dispo_MED$algo <- "MED"
+    all_diab_type2_sniiram_dispo_glyc <- all_diab_type2_sniiram_dispo %>% filter(ID %in% diab_glyc_type2$ID)
+    all_diab_type2_sniiram_dispo_glyc$algo <- "GLYC"
+    all_diab_type2_sniiram_dispo_redondant <- rbind(all_diab_type2_sniiram_dispo_MDV, all_diab_type2_sniiram_dispo_MED, all_diab_type2_sniiram_dispo_glyc)
+    all_diab_type2_sniiram_dispo_redondant$algo <- factor(all_diab_type2_sniiram_dispo_redondant$algo, levels = c("MDV", "MED", "GLYC"))
+    table8 <- CI_table(all_diab_type2_sniiram_dispo_redondant, "algo", "min1AD", methode = "theory")
+    
+    
+    # Part 6: closer look to people consuming AD in the sniiram
+    
+    ALL_min1AD <- ALL_bis %>% filter(!is.na(`2009 Q1`))
     table(ALL_min1AD$type, useNA = "always")
+
     
-    # select only type 2 diabetic people
-    # ALL_type2 <- all_diab_sniiram %>% filter(type == "type2")
-    # 
-    # # table 3 : describe percentage of patients consuming at least one antidiabetic between 2009 and 2014
-    # all_diab_sniiram_type2$sniiram <- "NO"
-    # all_diab_sniiram_type2[all_diab_sniiram_type2$ID %in% med_antidiab$ID]$sniiram <- "YES"
-    # table(all_diab_sniiram_type2$sniiram)
-    # dcast(all_diab_sniiram_type2, all_diab_sniiram_type2$algo ~ all_diab_sniiram_type2$sniiram, length)
-    # 
-    # # select only meds that concern diabetic patients (type2) 
-    # med_antidiab_constancesselect <- med_antidiab %>% filter(ID %in% all_diab_sniiram_type2$ID)
-    # length(unique(med_antidiab_constancesselect$ID))
-    # 
-    # # Rq : how many volunteers from Constances consume antidiabetic meds in the sniiram
-    # med_antidiab_sniiramselect <-med_antidiab %>% filter(ID %in% indiv_consent$ID)
-    # length(unique(med_antidiab_sniiramselect$ID))
-    
-    
+
     ##########################################################################################################
     #                           Compare individuals according to source of detection                         #
     ##########################################################################################################
@@ -186,15 +244,16 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
         
         
     ################################################################################################################
-    #               Select Constances-detected type II diabetic patients with 2 empty trimesters                   #
+    #               Select Constances-detected type 2 diabetic patients with 2 empty trimesters                    #
     #                                       Fisrt Line treatment                                                   #
     ################################################################################################################
 
         # build main table
-        ALL_diab2 <- ALL %>% filter(!is.na(type), type == "type2", !is.na(`2009 Q1`))
+        ALL_diab2 <- ALL %>% filter(!is.na(type), type == "Type 2", !is.na(`2009 Q1`))
         ALL_diab2_2triempty <- ALL_diab2 %>% filter(`2009 Q1` == "empty", `2009 Q2` == "empty")
         # build sequences
-        seq_ALL_diab2_2triempty <- ALL_diab2_2triempty[, c("ID", col_seq)]
+        col_seq2 <- col_seq[-c(1,2)]
+        seq_ALL_diab2_2triempty <- ALL_diab2_2triempty[, c("ID", col_seq2)]
         # fill isolated empty trimesters
         fill_isolated_tri <- function(datatable) {
             assign("df", datatable)
@@ -207,7 +266,7 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
         # reinitialize sequences
         seq_reinit <- reinitialize(seq_ALL_diab2_2triempty, "empty")
         # put result in main table
-        ALL_diab2_2triempty$firstline <- seq_reinit$`2009 Q1`
+        ALL_diab2_2triempty$firstline <- seq_reinit$`2009 Q3`
         ALL_diab2_2triempty$firstline_t <- seq_reinit$vect_count
         seq_reinit$vect_count <- NULL
         # plot
@@ -219,21 +278,23 @@ saveRDS(ALL, paste0(data_dir, "ALL.rds"))
         # stats first line
         treat_count <- as.data.frame(table(ALL_diab2_2triempty$firstline)) %>% arrange(-Freq)
         # survival period + censoring for sequences starting with metformin
-        seq_reinit_Met <- seq_reinit %>% filter(`2009 Q1` == "metformine")
+        seq_reinit_Met <- seq_reinit %>% filter(`2009 Q3` == "metformine")
         seq_reinit_Met_reinit <- reinitialize(seq_reinit_Met, "metformine")
-        seq_reinit_Met_reinit_info <- seq_reinit_Met_reinit %>% select(ID, `2009 Q1`, vect_count) %>% rename("ID" = ID, secondline = `2009 Q1`, secondline_t = vect_count)
+        seq_reinit_Met_reinit_info <- seq_reinit_Met_reinit %>% select(ID, `2009 Q3`, vect_count) %>% rename("ID" = ID, secondline = `2009 Q3`, secondline_t = vect_count)
         seq_reinit_Met_reinit_info$secondline[is.na(seq_reinit_Met_reinit_info$secondline)] <- "censor"
         ALL_diab2_2triempty <- merge(ALL_diab2_2triempty, seq_reinit_Met_reinit_info, by = "ID", all.x = T)
         treat2_count <- as.data.frame(table(ALL_diab2_2triempty$secondline)) %>% arrange(-Freq)
 
     # survival analysis
         ALL_diab2_2triempty$newtreat <- ifelse(ALL_diab2_2triempty$secondline != "censor", 1, 0)
-        surv_model1 <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~1)
+        surv_model1 <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat) ~ 1)
+        surv_model1
         plot(surv_model1, main = "Maintien du traitement Metformine seule")
         ALL_diab2_2triempty$secondline[ ALL_diab2_2triempty$secondline =="censor"] <- NA
         ALL_diab2_2triempty$secondline <- factor(ALL_diab2_2triempty$secondline)
         modals <- levels(ALL_diab2_2triempty$secondline)
         surv_model2 <- survfit(Surv(ALL_diab2_2triempty$secondline_t, ALL_diab2_2triempty$newtreat)~ALL_diab2_2triempty$secondline)
+        surv_model2
         plot(surv_model, lty = 1, col = rainbow(length(modals)), main = "Maintien du traitement Metformine seule")
         legend("top", 
             legend=modals,
